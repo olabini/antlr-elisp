@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<project basedir="." default="run-test-files" name="antlr-elisp">
+  <path id="build.classpath">
+    <fileset dir="lib" includes="*.jar"/>
+    <pathelement path="src/template"/>
+  </path>
+
+  <target name="prepare" description="Creates the directories needed for building">
+    <mkdir dir="build"/>
+
+    <condition property="grammar.test_lexer_java.notUpdated">
+      <uptodate targetfile="build/test/grammars/test_lexer_javaLexer.java" srcfile="test/grammars/test_lexer_java.g"/>
+    </condition>
+    
+    <condition property="grammar.test_lexer_elisp.notUpdated">
+      <and>
+        <uptodate targetfile="build/test/grammars/test_lexer_elispLexer.el" srcfile="test/grammars/test_lexer_elisp.g"/>
+        <uptodate targetfile="build/test/grammars/test_lexer_elispLexer.el" srcfile="src/template/org/antlr/codegen/templates/ELisp/ELisp.stg"/>
+      </and>
+    </condition>
+  </target>
+
+  <target name="build" depends="prepare" description="Generates source files from the ANTLR definitions">
+    <antcall target="build-grammar">
+      <param name="grammar-file" value="test_lexer_java"/>
+    </antcall>
+
+    <antcall target="build-grammar">
+      <param name="grammar-file" value="test_lexer_elisp"/>
+    </antcall>
+  </target>
+
+  <target name="build-grammar" unless="grammar.${grammar-file}.notUpdated">
+    <echo>Generating "${grammar-file}"</echo>
+    <java classname="org.antlr.Tool" fork="true" classpathref="build.classpath">
+      <arg line="-o build test/grammars/${grammar-file}.g "/>
+    </java>
+  </target>
+
+  <target name="run-test-files" depends="build">
+    <exec executable="emacs" failOnError="true">
+      <arg line="-batch -q -l test/run_tests.el"/>
+    </exec>
+  </target>
+</project>
