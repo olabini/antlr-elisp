@@ -14,11 +14,22 @@
     <condition property="grammar.test_lexer_java.notUpdated">
       <uptodate targetfile="build/test/grammars/test_lexer_javaLexer.java" srcfile="test/grammars/test_lexer_java.g"/>
     </condition>
+
+    <condition property="grammar.calc_java.notUpdated">
+      <uptodate targetfile="build/test/grammars/calc_javaLexer.java" srcfile="test/grammars/calc_java.g"/>
+    </condition>
     
     <condition property="grammar.test_lexer_elisp.notUpdated">
       <and>
         <uptodate targetfile="build/test/grammars/test_lexer_elispLexer.el" srcfile="test/grammars/test_lexer_elisp.g"/>
         <uptodate targetfile="build/test/grammars/test_lexer_elispLexer.el" srcfile="src/template/org/antlr/codegen/templates/ELisp/ELisp.stg"/>
+      </and>
+    </condition>
+
+    <condition property="grammar.calc_elisp.notUpdated">
+      <and>
+        <uptodate targetfile="build/test/grammars/calc_elispLexer.el" srcfile="test/grammars/calc_elisp.g"/>
+        <uptodate targetfile="build/test/grammars/calc_elispLexer.el" srcfile="src/template/org/antlr/codegen/templates/ELisp/ELisp.stg"/>
       </and>
     </condition>
   </target>
@@ -36,7 +47,15 @@
     </antcall>
 
     <antcall target="build-grammar">
+      <param name="grammar-file" value="calc_java"/>
+    </antcall>
+
+    <antcall target="build-grammar">
       <param name="grammar-file" value="test_lexer_elisp"/>
+    </antcall>
+
+    <antcall target="build-grammar">
+      <param name="grammar-file" value="calc_elisp"/>
     </antcall>
   </target>
 

@@ -176,7 +176,6 @@ catch(decl,action) ::= <<
 >>
 
 ruleDeclarations() ::= <<
-;; FIXME(ruleDeclarations)
 >>
 
 ruleScopeSetUp() ::= <<
@@ -333,28 +332,25 @@ blockSingleAlt(alts,decls,decision,enclosingBlockLevel,blockLevel,decisionNumber
 /** A (..)+ block with 1 or more alternatives */
 positiveClosureBlock(alts,decls,decision,enclosingBlockLevel,blockLevel,decisionNumber,maxK,maxAlt,description) ::= <<
 ;; <fileName>:<description>
-int cnt<decisionNumber>=0;
-<decls>
-<@preloop()>
-loop<decisionNumber>:
-do {
-    int alt<decisionNumber>=<maxAlt>;
-    <@predecision()>
-    <decision>
-    <@postdecision()>
-    switch (alt<decisionNumber>) {
-	<alts:altSwitchCase()>
-	default :
-	    if ( cnt<decisionNumber> >= 1 ) break loop<decisionNumber>;
-	    <ruleBacktrackFailure()>
-            EarlyExitException eee =
-                new EarlyExitException(<decisionNumber>, input);
-            <@earlyExitException()>
-            throw eee;
-    }
-    cnt<decisionNumber>++;
-} while (true);
-<@postloop()>
+(let ((cnt<decisionNumber> 0))
+  <decls>
+  <@preloop()>
+  (catch 'loop<decisionNumber>
+    (while t
+      (let ((alt<decisionNumber> <maxAlt>))
+        <@predecision()>
+        <decision>
+        <@postdecision()>
+        (case alt<decisionNumber>
+          <alts:altSwitchCase()>
+          (otherwise
+            (if (>= cnt<decisionNumber> 1)
+              (throw 'loop<decisionNumber>))
+            <ruleBacktrackFailure()>
+            (signal 'lexer-early-exit (list <decisionNumber>))))
+        (incf cnt<decisionNumber>))
+    ))
+<@postloop()>)
 >>
 
 positiveClosureBlockSingleAlt ::= positiveClosureBlock
@@ -393,10 +389,10 @@ optionalBlockSingleAlt ::= block
  *  does the jump to the code that actually matches that alternative.
  */
 altSwitchCase() ::= <<
-case <i> :
+(<i>
     <@prealt()>
     <it>
-    break;<\n>
+    )<\n>
 >>
 
 /** An alternative is just a list of elements; at outermost level */
@@ -445,16 +441,16 @@ charRef(char,label) ::= <<
 /** match a character range */
 charRangeRef(a,b,label) ::= <<
 <if(label)>
-<label> = input.LA(1);<\n>
+(setq <label> (lexer-input-LA 1))<\n>
 <endif>
-matchRange(<a>,<b>); <checkRuleBacktrackFailure()>
+(lexer-match-range <a> <b>) <checkRuleBacktrackFailure()>
 >>
 
 /** For now, sets are interval tests and must be tested inline */
 matchSet(s,label,elementIndex,postmatchCode="") ::= <<
 <if(label)>
 <if(LEXER)>
-<label>= input.LA(1);<\n>
+(setq <label> (lexer-input-LA 1))<\n>
 <else>
 <label>=(<labelType>)input.LT(1);<\n>
 <endif>
@@ -493,7 +489,7 @@ int <label>Start = getCharIndex();
 match(<string>); <checkRuleBacktrackFailure()>
 <labelType> <label> = new CommonToken(input, Token.INVALID_TOKEN_TYPE, Token.DEFAULT_CHANNEL, <label>Start, getCharIndex()-1);
 <else>
-match(<string>); <checkRuleBacktrackFailure()><\n>
+(lexer-match <string>) <checkRuleBacktrackFailure()><\n>
 <endif>
 >>
 
@@ -512,7 +508,7 @@ wildcardAndListLabel(label,elementIndex) ::= <<
 /** Match . wildcard in lexer */
 wildcardChar(label, elementIndex) ::= <<
 <if(label)>
-<label> = input.LA(1);<\n>
+(setq <label> (lexer-input-LA 1))<\n>
 <endif>
 matchAny(); <checkRuleBacktrackFailure()>
 >>
@@ -563,10 +559,10 @@ lexerRuleRefAndListLabel(rule,label,args,elementIndex) ::= <<
 lexerMatchEOF(label,elementIndex) ::= <<
 <if(label)>
 int <label>Start<elementIndex> = getCharIndex();
-match(EOF); <checkRuleBacktrackFailure()>
+(lexer-match EOF) <checkRuleBacktrackFailure()>
 <labelType> <label> = new CommonToken(input, EOF, Token.DEFAULT_CHANNEL, <label>Start<elementIndex>, getCharIndex()-1);
 <else>
-match(EOF); <checkRuleBacktrackFailure()>
+(lexer-match EOF) <checkRuleBacktrackFailure()>
 <endif>
 >>
 
@@ -575,7 +571,7 @@ tree(root, actionsAfterRoot, children, nullableChildList) ::= <<
 <root:element()>
 <actionsAfterRoot:element()>
 <if(nullableChildList)>
-if ( input.LA(1)==Token.DOWN ) {
+if ( (lexer-input-LA 1)==Token.DOWN ) {
     match(input, Token.DOWN, null); <checkRuleBacktrackFailure()>
     <children:element()>
     match(input, Token.UP, null); <checkRuleBacktrackFailure()>
@@ -600,11 +596,11 @@ if ( !(<evalPredicate(...)>) ) {
 // F i x e d  D F A  (if-then-else)
 
 dfaState(k,edges,eotPredictsAlt,description,stateNumber,semPredState) ::= <<
-int LA<decisionNumber>_<stateNumber> = input.LA(<k>);<\n>
+(let ((LA<decisionNumber>_<stateNumber> (lexer-input-LA <k>)))<\n>
 <edges; separator="\nelse ">
 else {
 <if(eotPredictsAlt)>
-    alt<decisionNumber>=<eotPredictsAlt>;
+    (setq alt<decisionNumber> <eotPredictsAlt>)
 <else>
     <ruleBacktrackFailure()>
     NoViableAltException nvae =
@@ -613,6 +609,7 @@ else {
     throw nvae;<\n>
 <endif>
 }
+)
 >>
 
 /** Same as a normal DFA state except that we don't examine lookahead
@@ -621,7 +618,7 @@ else {
  *  expect "if ( LA(1)==X ) match(X);" and that's it.
  */
 dfaOptionalBlockState(k,edges,eotPredictsAlt,description,stateNumber,semPredState) ::= <<
-int LA<decisionNumber>_<stateNumber> = input.LA(<k>);<\n>
+(setq LA<decisionNumber>_<stateNumber> (lexer-input-LA <k>))<\n>
 <edges; separator="\nelse ">
 >>
 
@@ -632,30 +629,29 @@ int LA<decisionNumber>_<stateNumber> = input.LA(<k>);<\n>
  *  anything other than 'a' predicts exiting.
  */
 dfaLoopbackState(k,edges,eotPredictsAlt,description,stateNumber,semPredState) ::= <<
-int LA<decisionNumber>_<stateNumber> = input.LA(<k>);<\n>
+(setq LA<decisionNumber>_<stateNumber> (lexer-input-LA <k>))<\n>
 <edges; separator="\nelse "><\n>
 <if(eotPredictsAlt)>
 <if(!edges)>
-alt<decisionNumber>=<eotPredictsAlt>; <! if no edges, don't gen ELSE !>
+(setq alt<decisionNumber> <eotPredictsAlt>) <! if no edges, don't gen ELSE !>
 <else>
 else {
-    alt<decisionNumber>=<eotPredictsAlt>;
+    (setq alt<decisionNumber> <eotPredictsAlt>)
 }<\n>
 <endif>
 <endif>
 >>
 
 /** An accept state indicates a unique alternative has been predicted */
-dfaAcceptState(alt) ::= "alt<decisionNumber>=<alt>;"
+dfaAcceptState(alt) ::= "(setq alt<decisionNumber> <alt>)"
 
 /** A simple edge with an expression.  If the expression is satisfied,
  *  enter to the target state.  To handle gated productions, we may
  *  have to evaluate some predicates for this edge.
  */
 dfaEdge(labelExpr, targetState, predicates) ::= <<
-if ( (<labelExpr>) <if(predicates)>&& (<predicates>)<endif>) {
-    <targetState>
-}
+(when (and <labelExpr> <if(predicates)><predicates><endif>)
+  <targetState>)
 >>
 
 // F i x e d  D F A  (switch case)
@@ -664,7 +660,7 @@ if ( (<labelExpr>) <if(predicates)>&& (<predicates>)<endif>) {
  *  decides if this is possible: CodeGenerator.canGenerateSwitch().
  */
 dfaStateSwitch(k,edges,eotPredictsAlt,description,stateNumber,semPredState) ::= <<
-switch ( input.LA(<k>) ) {
+switch ( (lexer-input-LA <k>) ) {
 <edges; separator="\n">
 default:
 <if(eotPredictsAlt)>
@@ -680,17 +676,17 @@ default:
 >>
 
 dfaOptionalBlockStateSwitch(k,edges,eotPredictsAlt,description,stateNumber,semPredState) ::= <<
-switch ( input.LA(<k>) ) {
+switch ( (lexer-input-LA <k>) ) {
     <edges; separator="\n">
 }<\n>
 >>
 
 dfaLoopbackStateSwitch(k, edges,eotPredictsAlt,description,stateNumber,semPredState) ::= <<
-switch ( input.LA(<k>) ) {
+switch ( (lexer-input-LA <k>) ) {
 <edges; separator="\n"><\n>
 <if(eotPredictsAlt)>
 default:
-    alt<decisionNumber>=<eotPredictsAlt>;
+    (setq alt<decisionNumber> <eotPredictsAlt>)
     break;<\n>
 <endif>
 }<\n>
@@ -711,7 +707,7 @@ dfaEdgeSwitch(labels, targetState) ::= <<
  *  The <name> attribute is inherited via the parser, lexer, ...
  */
 dfaDecision(decisionNumber,description) ::= <<
-alt<decisionNumber> = dfa<decisionNumber>.predict(input);
+(setq alt<decisionNumber> dfa<decisionNumber>.predict(input))
 >>
 
 /* Dump DFA tables as run-length-encoded Strings of octal values.
@@ -796,7 +792,7 @@ class DFA<dfa.decisionNumber> extends DFA {
  *  state.
  */
 cyclicDFAState(decisionNumber,stateNumber,edges,needErrorClause,semPredState) ::= <<
-int LA<decisionNumber>_<stateNumber> = input.LA(1);<\n>
+(let ((LA<decisionNumber>_<stateNumber> (lexer-input-LA 1)))<\n>
 <if(semPredState)> <! get next lookahead symbol to test edges, then rewind !>
 int index<decisionNumber>_<stateNumber> = input.index();
 input.rewind();<\n>
@@ -808,6 +804,7 @@ input.seek(index<decisionNumber>_<stateNumber>);<\n>
 <endif>
 if ( s>=0 ) return s;
 break;
+)
 >>
 
 /** Just like a fixed DFA edge, test the lookahead and indicate what
@@ -827,28 +824,28 @@ s = <targetStateNumber>;<\n>
 
 // D F A  E X P R E S S I O N S
 
-andPredicates(left,right) ::= "(<left>&&<right>)"
+andPredicates(left,right) ::= "(and <left> <right>)"
 
 orPredicates(operands) ::= "(<first(operands)><rest(operands):{o | ||<o>}>)"
 
-notPredicate(pred) ::= "!(<evalPredicate(...)>)"
+notPredicate(pred) ::= "(not <evalPredicate(...)>)"
 
 evalPredicate(pred,description) ::= "<pred>"
 
 evalSynPredicate(pred,description) ::= "<pred>()"
 
-lookaheadTest(atom,k,atomAsInt) ::= "LA<decisionNumber>_<stateNumber>==<atom>"
+lookaheadTest(atom,k,atomAsInt) ::= "(equal LA<decisionNumber>_<stateNumber> <atom>)"
 
 /** Sometimes a lookahead test cannot assume that LA(k) is in a temp variable
  *  somewhere.  Must ask for the lookahead directly.
  */
-isolatedLookaheadTest(atom,k,atomAsInt) ::= "input.LA(<k>)==<atom>"
+isolatedLookaheadTest(atom,k,atomAsInt) ::= "(equal (lexer-input-LA <k>) <atom>)"
 
 lookaheadRangeTest(lower,upper,k,rangeNumber,lowerAsInt,upperAsInt) ::= <<
-(LA<decisionNumber>_<stateNumber>\>=<lower> && LA<decisionNumber>_<stateNumber>\<=<upper>)
+(and (\>= LA<decisionNumber>_<stateNumber> <lower>) (\<= LA<decisionNumber>_<stateNumber> <upper>))
 >>
 
-isolatedLookaheadRangeTest(lower,upper,k,rangeNumber,lowerAsInt,upperAsInt) ::= "(input.LA(<k>)\>=<lower> && input.LA(<k>)\<=<upper>)"
+isolatedLookaheadRangeTest(lower,upper,k,rangeNumber,lowerAsInt,upperAsInt) ::= "(and (\>= (lexer-input-LA <k>) <lower>) (\<= (lexer-input-LA <k>) <upper>))"
 
 setTest(ranges) ::= "<ranges; separator=\"||\">"
 
