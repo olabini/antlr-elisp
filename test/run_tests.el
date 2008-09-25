@@ -29,10 +29,12 @@
 
 (setq load-path (cons (expand-file-name "build/test/grammars") load-path))
 (setq load-path (cons (expand-file-name "src/runtime/ELisp") load-path))
+(setq load-path (cons (expand-file-name "test") load-path))
 
-(load "test_lexer_elispLexer.el")
+(require 'antlr-runtime)
 
+(require 'el_test)
 
-
+(load "simple_lexer_test.el")
 
 ;;; run_tests.el ends here

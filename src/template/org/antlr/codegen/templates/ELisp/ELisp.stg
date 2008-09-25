@@ -257,13 +257,13 @@ lexerRule(ruleName,nakedBlock,ruleDescriptor,block,memoize) ::= <<
   <ruleDescriptor.actions.init>
   <block><\n>
 <else>
-  (let ((_type (token-id <ruleName>)))
+  (let ((_type (lexer-token-id <ruleName>)))
     <ruleMemoization(name=ruleName)>
     <lexerRuleLabelDefs()>
     <ruleDescriptor.actions.init>
     <block>
     <ruleCleanUp()>
-    (set-current-type _type)
+    (lexer-set-type _type)
     <(ruleDescriptor.actions.after):execAction()>
   )
 <endif>
@@ -439,7 +439,7 @@ charRef(char,label) ::= <<
 <if(label)>
 (setq <label> (lookahead input 1))<\n>
 <endif>
-(match <char>) <checkRuleBacktrackFailure()>
+(lexer-match <char>) <checkRuleBacktrackFailure()>
 >>
 
 /** match a character range */
@@ -546,10 +546,10 @@ ruleRefAndListLabel(rule,label,elementIndex,args) ::= <<
 lexerRuleRef(rule,label,args,elementIndex) ::= <<
 <if(label)>
 int <label>Start<elementIndex> = getCharIndex();
-(call-rule <rule> <args; separator=" ">) <checkRuleBacktrackFailure()>
+(lexer-call-rule <rule> <args; separator=" ">) <checkRuleBacktrackFailure()>
 <label> = new CommonToken(input, Token.INVALID_TOKEN_TYPE, Token.DEFAULT_CHANNEL, <label>Start<elementIndex>, getCharIndex()-1);
 <else>
-(call-rule <rule> <args; separator=" ">) <checkRuleBacktrackFailure()>
+(lexer-call-rule <rule> <args; separator=" ">) <checkRuleBacktrackFailure()>
 <endif>
 >>
 

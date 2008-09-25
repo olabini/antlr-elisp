@@ -3,11 +3,13 @@
 <project basedir="." default="run-test-files" name="antlr-elisp">
   <path id="build.classpath">
     <fileset dir="lib" includes="*.jar"/>
+    <pathelement path="build/classes"/>
     <pathelement path="src/template"/>
   </path>
 
   <target name="prepare" description="Creates the directories needed for building">
     <mkdir dir="build"/>
+    <mkdir dir="build/classes"/>
 
     <condition property="grammar.test_lexer_java.notUpdated">
       <uptodate targetfile="build/test/grammars/test_lexer_javaLexer.java" srcfile="test/grammars/test_lexer_java.g"/>
@@ -21,7 +23,14 @@
     </condition>
   </target>
 
-  <target name="build" depends="prepare" description="Generates source files from the ANTLR definitions">
+  <target name="compile" depends="prepare">
+    <javac destdir="build/classes" debug="true" source="1.4" target="1.4">
+      <classpath refid="build.classpath"/>
+      <src path="src/java"/>
+    </javac>
+  </target>
+
+  <target name="build" depends="compile" description="Generates source files from the ANTLR definitions">
     <antcall target="build-grammar">
       <param name="grammar-file" value="test_lexer_java"/>
     </antcall>
