@@ -35,6 +35,12 @@
 
 (require 'el_test)
 
+(defun collect-lex-tokens (name str)
+  (let ((all-tokens ()))
+    (lex-string name str #'(lambda (token) (setq all-tokens (cons (cons (lexer-token-type token) (lexer-token-text token)) all-tokens))))
+    (reverse all-tokens)))
+
 (load "simple_lexer_test.el")
+(load "calc_lexer_test.el")
 
 ;;; run_tests.el ends here

@@ -70,8 +70,8 @@ lexer(grammar, name, tokens, scopes, rules, numRules, labelType="Token",
 
   <synpreds:{p | <lexerSynpred(p)>}>
 
-  <cyclicDFAs:{dfa | ;; FIXME(DFAdef) <dfa.decisionNumber>}; separator="\n">
   <cyclicDFAs:cyclicDFA()> <! dump tables for all DFA !>
+  <cyclicDFAs:{dfa | (setDFA dfa<dfa.decisionNumber> (make-DFAstruct-DFA<dfa.decisionNumber>))}; separator="\n">
 )
 >>
 
@@ -236,7 +236,8 @@ retval.stop = input.LT(-1);<\n>
 memoize() ::= <<
 <if(memoize)>
 <if(backtracking)>
-if ( backtracking>0 ) { memoize(input, <ruleDescriptor.index>, <ruleDescriptor.name>_StartIndex); }
+(if (> backtracking 0)
+  (memoize input <ruleDescriptor.index> <ruleDescriptor.name>_StartIndex))
 <endif>
 <endif>
 >>
@@ -287,29 +288,27 @@ tokensRule(ruleName,nakedBlock,args,block,ruleDescriptor) ::= <<
 /** A (...) subrule with multiple alternatives */
 block(alts,decls,decision,enclosingBlockLevel,blockLevel,decisionNumber,maxK,maxAlt,description) ::= <<
 ;; <fileName>:<description>
-int alt<decisionNumber>=<maxAlt>;
-<decls>
-<@predecision()>
-<decision>
-<@postdecision()>
-<@prebranch()>
-switch (alt<decisionNumber>) {
-    <alts:altSwitchCase()>
-}
-<@postbranch()>
+(let ((alt<decisionNumber> <maxAlt>))
+  <decls>
+  <@predecision()>
+  <decision>
+  <@postdecision()>
+  <@prebranch()>
+  (case alt<decisionNumber>
+    <alts:altSwitchCase()>)
+  <@postbranch()>)
 >>
 
 /** A rule block with multiple alternatives */
 ruleBlock(alts,decls,decision,enclosingBlockLevel,blockLevel,decisionNumber,maxK,maxAlt,description) ::= <<
 ;; <fileName>:<description>
-int alt<decisionNumber>=<maxAlt>;
-<decls>
-<@predecision()>
-<decision>
-<@postdecision()>
-switch (alt<decisionNumber>) {
-    <alts:altSwitchCase()>
-}
+(let ((alt<decisionNumber> <maxAlt>))
+  <decls>
+  <@predecision()>
+  <decision>
+  <@postdecision()>
+  (case alt<decisionNumber>
+    <alts:altSwitchCase()>))
 >>
 
 ruleBlockSingleAlt(alts,decls,decision,enclosingBlockLevel,blockLevel,decisionNumber,description) ::= <<
@@ -345,7 +344,7 @@ positiveClosureBlock(alts,decls,decision,enclosingBlockLevel,blockLevel,decision
           <alts:altSwitchCase()>
           (otherwise
             (if (>= cnt<decisionNumber> 1)
-              (throw 'loop<decisionNumber>))
+              (throw 'loop<decisionNumber> nil))
             <ruleBacktrackFailure()>
             (signal 'lexer-early-exit (list <decisionNumber>))))
         (incf cnt<decisionNumber>))
@@ -360,19 +359,17 @@ closureBlock(alts,decls,decision,enclosingBlockLevel,blockLevel,decisionNumber,m
 ;; <fileName>:<description>
 <decls>
 <@preloop()>
-loop<decisionNumber>:
-do {
-    int alt<decisionNumber>=<maxAlt>;
-    <@predecision()>
-    <decision>
-    <@postdecision()>
-    switch (alt<decisionNumber>) {
-	<alts:altSwitchCase()>
-	default :
-	    break loop<decisionNumber>;
-    }
-} while (true);
-<@postloop()>
+(catch 'loop<decisionNumber>
+  (while t
+    (let ((alt<decisionNumber> <maxAlt>))
+      <@predecision()>
+      <decision>
+      <@postdecision()>
+      (case alt<decisionNumber>
+        <alts:altSwitchCase()>
+        (otherwise
+          (throw 'loop<decisionNumber> nil)))))
+  <@postloop()>)
 >>
 
 closureBlockSingleAlt ::= closureBlock
@@ -426,8 +423,7 @@ tokenRefAndListLabel(token,label,elementIndex) ::= <<
 >>
 
 listLabel(label,elem) ::= <<
-if (list_<label>==null) list_<label>=new ArrayList();
-list_<label>.add(<elem>);<\n>
+(setq list_<label> (cons <elem> list_<label>))<\n>
 >>
 
 /** match a character */
@@ -455,26 +451,17 @@ matchSet(s,label,elementIndex,postmatchCode="") ::= <<
 <label>=(<labelType>)input.LT(1);<\n>
 <endif>
 <endif>
-if ( <s> ) {
-    input.consume();
+(if <s>
+  (progn
+    (lexer-input-consume)
     <postmatchCode>
 <if(!LEXER)>
-    errorRecovery=false;
+    (setq errorRecovery nil)
 <endif>
-    <if(backtracking)>failed=false;<endif>
-}
-else {
+    <if(backtracking)>(setq failed nil)<endif>)
     <ruleBacktrackFailure()>
-    MismatchedSetException mse =
-        new MismatchedSetException(null,input);
     <@mismatchedSetException()>
-<if(LEXER)>
-    recover(mse);
-<else>
-    recoverFromMismatchedSet(input,mse,FOLLOW_set_in_<ruleName><elementIndex>);
-<endif>
-    throw mse;
-}<\n>
+    (signal 'mismatched-set context))<\n>
 >>
 
 matchSetAndListLabel(s,label,elementIndex,postmatchCode) ::= <<
@@ -571,11 +558,10 @@ tree(root, actionsAfterRoot, children, nullableChildList) ::= <<
 <root:element()>
 <actionsAfterRoot:element()>
 <if(nullableChildList)>
-if ( (lexer-input-LA 1)==Token.DOWN ) {
+(when (equal (lexer-input-LA 1) *antlr-token-down*)
     match(input, Token.DOWN, null); <checkRuleBacktrackFailure()>
     <children:element()>
-    match(input, Token.UP, null); <checkRuleBacktrackFailure()>
-}
+    match(input, Token.UP, null); <checkRuleBacktrackFailure()>)
 <else>
 match(input, Token.DOWN, null); <checkRuleBacktrackFailure()>
 <children:element()>
@@ -587,10 +573,9 @@ match(input, Token.UP, null); <checkRuleBacktrackFailure()>
  *  also hoisted into a prediction expression).
  */
 validateSemanticPredicate(pred,description) ::= <<
-if ( !(<evalPredicate(...)>) ) {
+(when (not <evalPredicate(...)>)
     <ruleBacktrackFailure()>
-    throw new FailedPredicateException(input, "<ruleName>", "<description>");
-}
+    throw new FailedPredicateException(input, "<ruleName>", "<description>");)
 >>
 
 // F i x e d  D F A  (if-then-else)
@@ -707,7 +692,7 @@ dfaEdgeSwitch(labels, targetState) ::= <<
  *  The <name> attribute is inherited via the parser, lexer, ...
  */
 dfaDecision(decisionNumber,description) ::= <<
-(setq alt<decisionNumber> dfa<decisionNumber>.predict(input))
+(setq alt<decisionNumber> (predictDFA dfa<decisionNumber>))
 >>
 
 /* Dump DFA tables as run-length-encoded Strings of octal values.
@@ -719,54 +704,31 @@ dfaDecision(decisionNumber,description) ::= <<
  * the encoding methods.
  */
 cyclicDFA(dfa) ::= <<
-static final String DFA<dfa.decisionNumber>_eotS =
-    "<dfa.javaCompressedEOT; wrap="\"+\n    \"">";
-static final String DFA<dfa.decisionNumber>_eofS =
-    "<dfa.javaCompressedEOF; wrap="\"+\n    \"">";
-static final String DFA<dfa.decisionNumber>_minS =
-    "<dfa.javaCompressedMin; wrap="\"+\n    \"">";
-static final String DFA<dfa.decisionNumber>_maxS =
-    "<dfa.javaCompressedMax; wrap="\"+\n    \"">";
-static final String DFA<dfa.decisionNumber>_acceptS =
-    "<dfa.javaCompressedAccept; wrap="\"+\n    \"">";
-static final String DFA<dfa.decisionNumber>_specialS =
-    "<dfa.javaCompressedSpecial; wrap="\"+\n    \"">}>";
-static final String[] DFA<dfa.decisionNumber>_transitionS = {
-        <dfa.javaCompressedTransition:{s|"<s; wrap="\"+\n\"">"}; separator=",\n">
-};
+(defDFA DFA<dfa.decisionNumber>_transitionS [
+        <dfa.javaCompressedTransition:{s|"<s>"}; separator="\n">
+])
 
-static final short[] DFA<dfa.decisionNumber>_eot = DFA.unpackEncodedString(DFA<dfa.decisionNumber>_eotS);
-static final short[] DFA<dfa.decisionNumber>_eof = DFA.unpackEncodedString(DFA<dfa.decisionNumber>_eofS);
-static final char[] DFA<dfa.decisionNumber>_min = DFA.unpackEncodedStringToUnsignedChars(DFA<dfa.decisionNumber>_minS);
-static final char[] DFA<dfa.decisionNumber>_max = DFA.unpackEncodedStringToUnsignedChars(DFA<dfa.decisionNumber>_maxS);
-static final short[] DFA<dfa.decisionNumber>_accept = DFA.unpackEncodedString(DFA<dfa.decisionNumber>_acceptS);
-static final short[] DFA<dfa.decisionNumber>_special = DFA.unpackEncodedString(DFA<dfa.decisionNumber>_specialS);
-static final short[][] DFA<dfa.decisionNumber>_transition;
+(defDFA DFA<dfa.decisionNumber>_eot [<dfa.eot; wrap="\n", separator=" ", null="-1">])
+(defDFA DFA<dfa.decisionNumber>_eof [<dfa.eof; wrap="\n", separator=" ", null="-1">])
+(defDFA DFA<dfa.decisionNumber>_min [<dfa.min; wrap="\n", separator=" ", null="-1">])
+(defDFA DFA<dfa.decisionNumber>_max [<dfa.max; wrap="\n", separator=" ", null="-1">])
+(defDFA DFA<dfa.decisionNumber>_accept [<dfa.accept; wrap="\n", separator=" ", null="-1">])
+(defDFA DFA<dfa.decisionNumber>_special [<dfa.special; wrap="\n", separator=" ", null="-1">])
+(defDFA DFA<dfa.decisionNumber>_transition [
+        <dfa.transition:{s | [<s; wrap="\n     ", separator=" ", null="-1">]}; separator=" \n", null="">
+    ])
 
-static {
-    int numStates = DFA<dfa.decisionNumber>_transitionS.length;
-    DFA<dfa.decisionNumber>_transition = new short[numStates][];
-    for (int i=0; i\<numStates; i++) {
-        DFA<dfa.decisionNumber>_transition[i] = DFA.unpackEncodedString(DFA<dfa.decisionNumber>_transitionS[i]);
-    }
-}
+(defDFAstruct DFA<dfa.decisionNumber>
+  :decision-number <dfa.decisionNumber>
+  :eot (getDFA DFA<dfa.decisionNumber>_eot)
+  :eof (getDFA DFA<dfa.decisionNumber>_eof)
+  :min (getDFA DFA<dfa.decisionNumber>_min)
+  :max (getDFA DFA<dfa.decisionNumber>_max)
+  :accept (getDFA DFA<dfa.decisionNumber>_accept)
+  :special (getDFA DFA<dfa.decisionNumber>_special)
+  :transition (getDFA DFA<dfa.decisionNumber>_transition)
+  :description "<dfa.description>")
 
-class DFA<dfa.decisionNumber> extends DFA {
-
-    public DFA<dfa.decisionNumber>(BaseRecognizer recognizer) {
-        this.recognizer = recognizer;
-        this.decisionNumber = <dfa.decisionNumber>;
-        this.eot = DFA<dfa.decisionNumber>_eot;
-        this.eof = DFA<dfa.decisionNumber>_eof;
-        this.min = DFA<dfa.decisionNumber>_min;
-        this.max = DFA<dfa.decisionNumber>_max;
-        this.accept = DFA<dfa.decisionNumber>_accept;
-        this.special = DFA<dfa.decisionNumber>_special;
-        this.transition = DFA<dfa.decisionNumber>_transition;
-    }
-    public String getDescription() {
-        return "<dfa.description>";
-    }
     <@errorMethod()>
 <if(dfa.specialStateSTs)>
     public int specialStateTransition(int s, IntStream input) throws NoViableAltException {
@@ -777,7 +739,9 @@ class DFA<dfa.decisionNumber> extends DFA {
             <state>}; separator="\n">
         }
 <if(backtracking)>
-        if (backtracking>0) {failed=true; return -1;}<\n>
+        (when (> backtracking 0)
+          (setq failed t)
+          (throw 'return -1))<\n>
 <endif>
         NoViableAltException nvae =
             new NoViableAltException(getDescription(), <dfa.decisionNumber>, _s, input);
@@ -785,7 +749,6 @@ class DFA<dfa.decisionNumber> extends DFA {
         throw nvae;
     }<\n>
 <endif>
-}<\n>
 >>
 
 /** A state in a cyclic DFA; it's a special state and part of a big switch on
@@ -802,7 +765,8 @@ s = -1;
 <if(semPredState)> <! return input cursor to state before we rewound !>
 input.seek(index<decisionNumber>_<stateNumber>);<\n>
 <endif>
-if ( s>=0 ) return s;
+(when (>= s 0 ) 
+  (throw 'return s)
 break;
 )
 >>
@@ -818,7 +782,7 @@ if ( (<labelExpr>) <if(predicates)>&& (<predicates>)<endif>) {s = <targetStateNu
  *  always jump to the target.
  */
 eotDFAEdge(targetStateNumber,edgeNumber, predicates) ::= <<
-s = <targetStateNumber>;<\n>
+(setq s <targetStateNumber>)<\n>
 >>
 
 
@@ -826,13 +790,13 @@ s = <targetStateNumber>;<\n>
 
 andPredicates(left,right) ::= "(and <left> <right>)"
 
-orPredicates(operands) ::= "(<first(operands)><rest(operands):{o | ||<o>}>)"
+orPredicates(operands) ::= "(or <first(operands)><rest(operands):{o | <o>}>)"
 
 notPredicate(pred) ::= "(not <evalPredicate(...)>)"
 
 evalPredicate(pred,description) ::= "<pred>"
 
-evalSynPredicate(pred,description) ::= "<pred>()"
+evalSynPredicate(pred,description) ::= "(<pred>)"
 
 lookaheadTest(atom,k,atomAsInt) ::= "(equal LA<decisionNumber>_<stateNumber> <atom>)"
 
@@ -847,7 +811,7 @@ lookaheadRangeTest(lower,upper,k,rangeNumber,lowerAsInt,upperAsInt) ::= <<
 
 isolatedLookaheadRangeTest(lower,upper,k,rangeNumber,lowerAsInt,upperAsInt) ::= "(and (\>= (lexer-input-LA <k>) <lower>) (\<= (lexer-input-LA <k>) <upper>))"
 
-setTest(ranges) ::= "<ranges; separator=\"||\">"
+setTest(ranges) ::= "(or <ranges; separator=\" \">)"
 
 // A T T R I B U T E S
 
@@ -1059,13 +1023,11 @@ ruleSetPropertyRef_st(scope,attr,expr) ::= "retval.st =<expr>;"
 execAction(action) ::= <<
 <if(backtracking)>
 <if(actions.(actionScope).synpredgate)>
-if ( <actions.(actionScope).synpredgate> ) {
-  <action>
-}
+(when (<actions.(actionScope).synpredgate>)
+  <action>)
 <else>
-if ( backtracking==0 ) {
-  <action>
-}
+(when (= backtracking 0)
+  <action>)
 <endif>
 <else>
 <action>

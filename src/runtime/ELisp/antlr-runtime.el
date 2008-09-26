@@ -36,13 +36,15 @@
 
 (defmacro deflexer (name)
   `(puthash ',name 
-            (make-antlr-lexer) 
+            (make-antlr-lexer :name ',name) 
             *antlr-runtime-lexers*))
 
 (defstruct antlr-lexer
   "An Antlr lexer"
+  name
   (tokens (make-hash-table))
-  (rules (make-hash-table)))
+  (rules (make-hash-table))
+  (dfas (make-hash-table)))
 
 (defstruct common-token
   "A Common Antlr token"
@@ -54,6 +56,89 @@
   line
   text
   char-position-in-line)
+
+(defstruct DFA
+  recognizer
+  decision-number
+  eot
+  eof
+  min
+  max
+  accept
+  special
+  transition
+  description)
+
+(defun lexer-input-LA (n)
+  (if (= (point) (point-max))
+      -1
+      (char-after (+ n 1))))
+  
+(defun lexer-input-consume ()
+  (goto-char (+ (point) 1)))  
+
+(defun dfa-special-state-transition (state)
+  -1)
+
+(defun predict-DFA-with (dfa)
+  (save-excursion
+    (catch 'return
+      (let ((s 0))
+        (while t
+          (catch 'continue
+            (let ((special-state (aref (DFA-special dfa) s)))
+              (when (>= special-state 0)
+                (setq s (dfa-special-state-transition special-state))
+                (lexer-input-consume)
+                (throw 'continue nil))
+              (when (>= (aref (DFA-accept dfa) s) 1)
+                (throw 'return (aref (DFA-accept dfa) s)))
+              (let ((c (lexer-input-LA 1)))
+                (when (and (>= c (aref (DFA-min dfa) s)) (<= c (aref (DFA-max dfa) s)))
+                  (let ((snext (aref (aref (DFA-transition dfa) s) (- c (aref (DFA-min dfa) s)) )))
+                    (when (< snext 0)
+                      (when (>= (aref (DFA-eot dfa) s) 0)
+                        (setq s (aref (DFA-eot dfa) s))
+                        (lexer-input-consume)
+                        (throw 'continue nil))
+                      (dfa-no-viable-alt s)
+                      (throw 'return 0))
+                    (setq s snext)
+                    (lexer-input-consume)
+                    (throw 'continue nil)))
+                (when (>= (aref (DFA-eot dfa) s) 0)
+                  (setq s (aref (DFA-eot dfa) s))
+                  (lexer-input-consume)
+                  (throw 'continue nil))
+                (when (and (eq c *antlr-token-eof-token*) (>= (aref (DFA-eof dfa) s) 0))
+                  (throw 'return (aref (DFA-accept dfa) (aref (DFA-eof dfa) s))))
+                (dfa-no-viable-alt s)
+                (throw 'return 0)))))))))
+
+(defmacro predictDFA (name)
+  `(predict-DFA-with (gethash ',name (antlr-lexer-dfas current-lexer))))
+
+(defmacro setDFA (name value)
+  `(puthash ',name ,value (antlr-lexer-dfas current-lexer)))
+
+(defmacro defDFA (name value)
+  `(set (intern (concat "*" (format "%s" (antlr-lexer-name current-lexer)) "-" (format "%s" ',name) "*")) ,value))
+
+(defmacro getDFA (name)
+  `(symbol-value (intern (concat "*" (format "%s" (antlr-lexer-name current-lexer)) "-" (format "%s" ',name) "*"))))
+
+(defmacro defDFAstruct (name &rest defaults)
+  `(progn 
+     (fset (intern (concat (format "%s" (antlr-lexer-name current-lexer)) "-" (format "%s" ',name))) 
+           #'(lambda (reco)
+               (make-DFA
+                :recognizer reco
+                ,@defaults
+                )))
+     (unless (fboundp (intern (concat "make-DFAstruct-" (format "%s" ',name))))
+       (fset (intern (concat "make-DFAstruct-" (format "%s" ',name))) 
+             #'(lambda ()
+                 (funcall (intern (concat (format "%s" (antlr-lexer-name current-lexer)) "-" (format "%s" ',name))) nil))))))
 
 (defun lexer-token-type (token)
   (common-token-type token))
@@ -84,7 +169,8 @@
   (token-start-char-position-in-line -1)
   (channel nil)
   (type nil)
-  (text nil))
+  (text nil)
+  (failed nil))
 
 (put 'mismatched-token 'error-conditions
      '(error antlr-error))
@@ -94,7 +180,9 @@
   (setf (antlr-lexer-context-type context) type))
 
 (defmacro lexer-call-rule (name)
-  `(funcall (gethash ',name (antlr-lexer-rules (antlr-lexer-context-lexer context))) context))
+  `(progn 
+     ;(message (concat "calling rule " (format "%s" ',name))) 
+     (funcall (gethash ',name (antlr-lexer-rules (antlr-lexer-context-lexer context))) context)))
 
 (defmacro lexer-token-id (name)
   `(gethash ',name (antlr-lexer-tokens (antlr-lexer-context-lexer context))))
@@ -104,6 +192,13 @@
 
 (defmacro defrule (name params &rest body)
   `(puthash ',name (lambda (context ,@params) ,@body) (antlr-lexer-rules current-lexer)))
+
+(defmacro lexer-match-range (a b)
+  (let ((la (lexer-input-LA 1)))
+    (when (or (< la a) (> la b))
+      (signal 'mismatched-range (list a b)))
+    (lexer-input-consume)
+    (setf (antlr-lexer-context-failed context) nil)))
 
 (defmacro lexer-match (s)
   (cond
@@ -146,8 +241,9 @@
     token))
 
 (defun lex-buffer (lexer-name method buffer start end)
-  (let ((context (make-antlr-lexer-context 
-                  :lexer (gethash lexer-name *antlr-runtime-lexers*))))
+  (let* ((current-lexer (gethash lexer-name *antlr-runtime-lexers*))
+         (context (make-antlr-lexer-context 
+                   :lexer current-lexer)))
     (save-excursion
       (with-current-buffer buffer
         (goto-char start)

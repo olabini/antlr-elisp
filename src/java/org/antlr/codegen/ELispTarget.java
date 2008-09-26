@@ -8,6 +8,13 @@ public class ELispTarget extends Target {
     public String getTargetCharLiteralFromANTLRCharLiteral(CodeGenerator generator,
                                                            String literal){
         
-        return "?" + literal.charAt(1);
+        if(literal.equals("' '")) {
+            return "?\\ ";
+        }
+        return "?" + literal.substring(1, literal.length()-1);
+	}
+
+	public int getMaxCharValue(CodeGenerator generator) {
+		return 0xFF;
 	}
 }

@@ -10,4 +10,4 @@ DECIMAL: DIGIT+ '.' DIGIT+;
 
 fragment
 DIGIT: '0'..'9';
-WS: (' ' | '\n' | '\t')+ { channel = 99 };
+WS: (' ' | '\n' | '\t')+ { (setq channel 99) };
