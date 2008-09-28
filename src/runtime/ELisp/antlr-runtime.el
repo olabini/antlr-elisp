@@ -70,12 +70,13 @@
   description)
 
 (defun lexer-input-LA (n)
-  (if (= (point) (point-max))
+  (let ((at (+ (point) (- n 1))))
+    (if (= at (point-max))
       -1
-      (char-after (+ n 1))))
+      (char-after at))))
   
 (defun lexer-input-consume ()
-  (goto-char (+ (point) 1)))  
+  (goto-char (+ (point) 1)))
 
 (defun dfa-special-state-transition (state)
   -1)
@@ -114,6 +115,10 @@
                   (throw 'return (aref (DFA-accept dfa) (aref (DFA-eof dfa) s))))
                 (dfa-no-viable-alt s)
                 (throw 'return 0)))))))))
+
+
+(defun dfa-no-viable-alt (s)
+  (signal 'no-viable-alt (list s)))
 
 (defmacro predictDFA (name)
   `(predict-DFA-with (gethash ',name (antlr-lexer-dfas current-lexer))))
@@ -155,9 +160,9 @@
        text))
     (t nil)))
 
-(defconst *antlr-token-eof-token* (make-common-token :type -1))
-(defconst *antlr-token-invalid-token* (make-common-token :type *antlr-token-invalid-token-type*))
-(defconst *antlr-token-skip-token* (make-common-token :type *antlr-token-invalid-token-type*))
+(defconst *antlr-token-eof-token* (make-common-token :type -1 :channel 0))
+(defconst *antlr-token-invalid-token* (make-common-token :type *antlr-token-invalid-token-type* :channel 0))
+(defconst *antlr-token-skip-token* (make-common-token :type *antlr-token-invalid-token-type* :channel 0))
 
 (defstruct antlr-lexer-context
   "Context used for a lexing"
@@ -176,8 +181,15 @@
      '(error antlr-error))
 (put 'mismatched-token 'error-message "Mismatched token")
 
+(put 'no-viable-alt 'error-conditions
+     '(error antlr-error))
+(put 'no-viable-alt 'error-message "No viable alternative")
+
 (defun lexer-set-type (type)
   (setf (antlr-lexer-context-type context) type))
+
+(defun lexer-set-channel (c)
+  (setf (antlr-lexer-context-channel context) c))
 
 (defmacro lexer-call-rule (name)
   `(progn 
@@ -203,11 +215,19 @@
 (defmacro lexer-match (s)
   (cond
     ((numberp s) 
-     `(if (= (char-after) ,s)
+     `(if (= (lexer-input-LA 1) ,s)
           (goto-char (+ (point) 1))
           (signal 'mismatched-token (list ,(char-to-string s) context))))
-    ((stringp s) )
-    (t )))
+    ((stringp s) 
+     `(let ((i 0)
+            (str ,s))
+        (while (< i (length str))
+          (unless (= (lexer-input-LA 1) (elt str i))
+            (signal 'mismatched-token (list (point) (char-to-string (lexer-input-LA 1)) (lexer-input-LA 1) (char-to-string (elt str i)) (elt str i) str context)))
+          (incf i)
+          (lexer-input-consume)
+          (setf (antlr-lexer-context-failed context) nil))))
+    (t (signal 'error "Implement t case"))))
 
 (defmacro with-lexer (name &rest body)
   `(progn 

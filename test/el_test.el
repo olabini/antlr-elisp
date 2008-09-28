@@ -11,9 +11,9 @@
   `(let ((first-param ,first)
          (second-param ,second))
      (unless (equal first-param second-param)
-       (signal 'test-failed (concat ,name ": " 
+       (signal 'test-failed (concat ,name " - expected: " 
                                     (format "%s" first-param) 
-                                    " should be equal to " 
+                                    " but was: " 
                                     (format "%s" second-param))))))
 
 (defmacro assert-error (name error code)

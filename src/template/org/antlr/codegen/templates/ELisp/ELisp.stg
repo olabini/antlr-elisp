@@ -704,9 +704,6 @@ dfaDecision(decisionNumber,description) ::= <<
  * the encoding methods.
  */
 cyclicDFA(dfa) ::= <<
-(defDFA DFA<dfa.decisionNumber>_transitionS [
-        <dfa.javaCompressedTransition:{s|"<s>"}; separator="\n">
-])
 
 (defDFA DFA<dfa.decisionNumber>_eot [<dfa.eot; wrap="\n", separator=" ", null="-1">])
 (defDFA DFA<dfa.decisionNumber>_eof [<dfa.eof; wrap="\n", separator=" ", null="-1">])

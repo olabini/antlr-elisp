@@ -37,7 +37,9 @@
 
 (defun collect-lex-tokens (name str)
   (let ((all-tokens ()))
-    (lex-string name str #'(lambda (token) (setq all-tokens (cons (cons (lexer-token-type token) (lexer-token-text token)) all-tokens))))
+    (lex-string name str #'(lambda (token) 
+                             (when (= (common-token-channel token) 0)
+                               (setq all-tokens (cons (cons (lexer-token-type token) (lexer-token-text token)) all-tokens)))))
     (reverse all-tokens)))
 
 (load "simple_lexer_test.el")
