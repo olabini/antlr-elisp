@@ -89,14 +89,20 @@ filteringActionGate() ::= ";; FIXME(filteringActionGate)"
 genericParser(grammar, name, scopes, tokens, tokenNames, rules, numRules,
               bitsets, inputStreamType, superClass,
               ASTLabelType="Object", labelType, members) ::= <<
-;; FIXME(class init parser)
+(defparser <name>)
 
-;; FIXME(token names)
+(with-parser <name>
+    (parser-token-names "\<invalid>" "\<EOR>" "\<DOWN>" "\<UP>" <tokenNames; separator=" ">)
 
-    <tokens:{;; FIXME(token def) <it.name>}; separator="\n">
+    <tokens:{(deftoken <it.name> <it.type>)}; separator="\n">
     <scopes:{<if(it.isDynamicGlobalScope)><globalAttributeScope(scope=it)><endif>}>
+
     <@members>
-;; FIXME(more init)
+    (parser-initialization
+<if(backtracking)>
+      (setf (antlr-parser-rule-memo current-parser) (make-vector (+ <numRules> 1) nil))
+<endif>
+      )
     <@end>
 
     <members>
@@ -110,7 +116,7 @@ genericParser(grammar, name, scopes, tokens, tokenNames, rules, numRules,
 
     <bitsets:bitset(name={FOLLOW_<it.name>_in_<it.inName><it.tokenIndex>},
                     words64=it.bits)>
-}
+)
 >>
 
 parser(grammar, name, scopes, tokens, tokenNames, rules, numRules, bitsets, ASTLabelType, superClass="Parser", labelType="Token", members={<actions.parser.members>}) ::= <<
@@ -168,7 +174,51 @@ ruleBacktrackFailure() ::= <<
 rule(ruleName,ruleDescriptor,block,emptyRule,description,exceptions,finally,memoize) ::= <<
 <ruleAttributeScope(scope=ruleDescriptor.ruleScope)>
 <returnScope(scope=ruleDescriptor.returnScope)>
-;; FIXME(codeForRule) <ruleName>
+
+
+<ruleAttributeScope(scope=ruleDescriptor.ruleScope)>
+<returnScope(scope=ruleDescriptor.returnScope)>
+
+
+
+;; $ANTLR start <ruleName>
+;; <fileName>:<description>
+(defrule <ruleName> (<ruleDescriptor.parameterScope:parameterScope(scope=it)>)
+  <if(trace)>(trace-in "<ruleName>" <ruleDescriptor.index>)<endif>
+  <ruleScopeSetUp()>
+  <ruleDeclarations()>
+  <ruleLabelDefs()>
+  <ruleDescriptor.actions.init>
+  <@preamble()>
+  (unwind-protect
+    (progn 
+      (condition-case re
+        (progn
+        <ruleMemoization(name=ruleName)>
+        <block>
+        <ruleCleanUp()>
+        <(ruleDescriptor.actions.after):execAction()>
+       )
+<if(exceptions)>
+    <exceptions:{e|<catch(decl=e.decl,action=e.action)><\n>}>))
+<else>
+<if(!emptyRule)>
+<if(actions.(actionScope).rulecatch)>
+    <actions.(actionScope).rulecatch>
+<else>
+    (error 
+      (report-error re)
+      (recover context re)))<\n>
+<endif>
+<endif>
+<endif>)
+    <if(trace)>(trace-out "<ruleName>" <ruleDescriptor.index>)<endif>
+    <memoize()>
+    <ruleScopeCleanUp()>
+    <finally>)
+    <@postamble()>
+    <ruleReturnValue()>)
+;; $ANTLR end <ruleName>
 >>
 
 catch(decl,action) ::= <<
