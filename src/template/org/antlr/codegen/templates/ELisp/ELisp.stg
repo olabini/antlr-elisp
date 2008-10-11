@@ -461,9 +461,10 @@ element() ::= <<
 /** match a token optionally with a label in front */
 tokenRef(token,label,elementIndex) ::= <<
 <if(label)>
-<label>=(<labelType>)input.LT(1);<\n>
+(setq <label> (parser-input-LT 1))<\n>
 <endif>
-match(input,<token>,FOLLOW_<token>_in_<ruleName><elementIndex>); <checkRuleBacktrackFailure()>
+(parser-match input <token> FOLLOW_<token>_in_<ruleName><elementIndex>)
+<checkRuleBacktrackFailure()>
 >>
 
 /** ids+=ID */
@@ -559,13 +560,13 @@ wildcardCharListLabel(label, elementIndex) ::= <<
  *  and a return value or values.
  */
 ruleRef(rule,label,elementIndex,args) ::= <<
-pushFollow(FOLLOW_<rule>_in_<ruleName><elementIndex>);
+(parser-push-follow FOLLOW_<rule>_in_<ruleName><elementIndex>)
 <if(label)>
-<label>=<rule>(<args; separator=", ">);<\n>
+(setq <label> (parser-call-rule <rule> <args; separator=" ">))<\n>
 <else>
-<rule>(<args; separator=", ">);<\n>
+(parser-call-rule <rule> <args; separator=" ">)<\n>
 <endif>
-_fsp--;
+(decf _fsp)
 <checkRuleBacktrackFailure()>
 >>
 
@@ -632,8 +633,8 @@ validateSemanticPredicate(pred,description) ::= <<
 
 dfaState(k,edges,eotPredictsAlt,description,stateNumber,semPredState) ::= <<
 (let ((LA<decisionNumber>_<stateNumber> (lexer-input-LA <k>)))<\n>
-<edges; separator="\nelse ">
-else {
+<edges; separator="\n   ">
+(progn
 <if(eotPredictsAlt)>
     (setq alt<decisionNumber> <eotPredictsAlt>)
 <else>
@@ -643,8 +644,7 @@ else {
     <@noViableAltException()>
     throw nvae;<\n>
 <endif>
-}
-)
+)<edges:{)}; separator="">)<\n>
 >>
 
 /** Same as a normal DFA state except that we don't examine lookahead
@@ -654,7 +654,7 @@ else {
  */
 dfaOptionalBlockState(k,edges,eotPredictsAlt,description,stateNumber,semPredState) ::= <<
 (setq LA<decisionNumber>_<stateNumber> (lexer-input-LA <k>))<\n>
-<edges; separator="\nelse ">
+<edges; separator="\n  "><edges:{)}; separator="">
 >>
 
 /** A DFA state that is actually the loopback decision of a closure
@@ -665,15 +665,16 @@ dfaOptionalBlockState(k,edges,eotPredictsAlt,description,stateNumber,semPredStat
  */
 dfaLoopbackState(k,edges,eotPredictsAlt,description,stateNumber,semPredState) ::= <<
 (setq LA<decisionNumber>_<stateNumber> (lexer-input-LA <k>))<\n>
-<edges; separator="\nelse "><\n>
+<edges; separator="\n  ">
 <if(eotPredictsAlt)>
 <if(!edges)>
 (setq alt<decisionNumber> <eotPredictsAlt>) <! if no edges, don't gen ELSE !>
 <else>
-else {
-    (setq alt<decisionNumber> <eotPredictsAlt>)
-}<\n>
+  (setq alt<decisionNumber> <eotPredictsAlt>)<edges:{)}; separator=""><\n>
+<\n>
 <endif>
+<else>
+<edges:{)}; separator=""><\n>
 <endif>
 >>
 
@@ -685,8 +686,8 @@ dfaAcceptState(alt) ::= "(setq alt<decisionNumber> <alt>)"
  *  have to evaluate some predicates for this edge.
  */
 dfaEdge(labelExpr, targetState, predicates) ::= <<
-(when (and <labelExpr> <if(predicates)><predicates><endif>)
-  <targetState>)
+(if (and <labelExpr> <if(predicates)><predicates><endif>)
+  (progn <targetState>)
 >>
 
 // F i x e d  D F A  (switch case)
@@ -695,44 +696,38 @@ dfaEdge(labelExpr, targetState, predicates) ::= <<
  *  decides if this is possible: CodeGenerator.canGenerateSwitch().
  */
 dfaStateSwitch(k,edges,eotPredictsAlt,description,stateNumber,semPredState) ::= <<
-switch ( (lexer-input-LA <k>) ) {
+(case (lexer-input-LA <k>)
 <edges; separator="\n">
-default:
+(otherwise
 <if(eotPredictsAlt)>
-    alt<decisionNumber>=<eotPredictsAlt>;
+    (setq alt<decisionNumber> <eotPredictsAlt>)
 <else>
     <ruleBacktrackFailure()>
     NoViableAltException nvae =
         new NoViableAltException("<description>", <decisionNumber>, <stateNumber>, input);<\n>
     <@noViableAltException()>
     throw nvae;<\n>
-<endif>
-}<\n>
+<endif>)
+)<\n>
 >>
 
 dfaOptionalBlockStateSwitch(k,edges,eotPredictsAlt,description,stateNumber,semPredState) ::= <<
-switch ( (lexer-input-LA <k>) ) {
+(case (lexer-input-LA <k>)
     <edges; separator="\n">
-}<\n>
+)<\n>
 >>
 
 dfaLoopbackStateSwitch(k, edges,eotPredictsAlt,description,stateNumber,semPredState) ::= <<
-switch ( (lexer-input-LA <k>) ) {
+(case (lexer-input-LA <k>)
 <edges; separator="\n"><\n>
 <if(eotPredictsAlt)>
-default:
-    (setq alt<decisionNumber> <eotPredictsAlt>)
-    break;<\n>
-<endif>
-}<\n>
+(otherwise
+    (setq alt<decisionNumber> <eotPredictsAlt>))<\n>
+<endif>)<\n>
 >>
 
 dfaEdgeSwitch(labels, targetState) ::= <<
-<labels:{case <it>:}; separator="\n">
-    {
-    <targetState>
-    }
-    break;
+<labels:{(<it> <targetState>)}; separator="\n">
 >>
 
 // C y c l i c  D F A
@@ -808,7 +803,7 @@ int index<decisionNumber>_<stateNumber> = input.index();
 input.rewind();<\n>
 <endif>
 s = -1;
-<edges; separator="\nelse ">
+<edges; separator="\n "><edges:{)}; separator=""><\n>
 <if(semPredState)> <! return input cursor to state before we rewound !>
 input.seek(index<decisionNumber>_<stateNumber>);<\n>
 <endif>
