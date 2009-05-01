@@ -300,7 +300,8 @@ lexerRule(ruleName,nakedBlock,ruleDescriptor,block,memoize) ::= <<
   <if(trace)>(trace-in "<ruleName>" <ruleDescriptor.index>)<endif>
   <ruleScopeSetUp()>
   <ruleDeclarations()>
-
+  (unwind-protect 
+    (progn
 <if(nakedBlock)>
   <ruleMemoization(name=ruleName)>
   <lexerRuleLabelDefs()>
@@ -317,10 +318,13 @@ lexerRule(ruleName,nakedBlock,ruleDescriptor,block,memoize) ::= <<
     <(ruleDescriptor.actions.after):execAction()>
   )
 <endif>
-  ;; Fixme: should be in equivalent of finally block
-  <if(trace)>(trace-in "<ruleName>" <ruleDescriptor.index>)<endif>
-  <ruleScopeCleanUp()>
-  <memoize()>
+  )
+  (progn
+    <if(trace)>(trace-in "<ruleName>" <ruleDescriptor.index>)<endif>
+    <ruleScopeCleanUp()>
+    <memoize()>
+  )
+ )
 ) ;; END rule <ruleName>
 >>
 
@@ -1079,7 +1083,7 @@ execAction(action) ::= <<
 // M I S C (properties, etc...)
 
 bitset(name, words64) ::= <<
-;; FIXME(BITSET)
+(parser-bitset <name> [<words64:{(read (concat "#X" (substring "<it>" 2)))};separator=" ">])<\n>
 >>
 
 codeFileExtension() ::= ".el"
