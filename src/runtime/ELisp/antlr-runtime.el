@@ -31,6 +31,9 @@
 (defvar *antlr-runtime-lexers* (make-hash-table)
   "Keeps track of all lexers defined in the system, including their definitions") 
 
+(defvar *antlr-runtime-parsers* (make-hash-table)
+  "Keeps track of all parsers defined in the system, including their definitions") 
+
 (defconst *antlr-token-default-channel* 0)
 (defconst *antlr-token-invalid-token-type* 0)
 
@@ -38,6 +41,11 @@
   `(puthash ',name 
             (make-antlr-lexer :name ',name) 
             *antlr-runtime-lexers*))
+
+(defmacro defparser (name)
+  `(puthash ',name 
+            (make-antlr-parser :name ',name) 
+            *antlr-runtime-parsers*))
 
 (defstruct antlr-lexer
   "An Antlr lexer"
@@ -200,10 +208,16 @@
   `(gethash ',name (antlr-lexer-tokens (antlr-lexer-context-lexer context))))
 
 (defmacro deftoken (name value)
-  `(puthash ',name ,value (antlr-lexer-tokens current-lexer)))
+  `(puthash ',name ,value 
+            (if (boundp 'current-lexer) 
+                (antlr-lexer-tokens current-lexer) 
+                (antlr-parser-tokens current-parser))))
 
 (defmacro defrule (name params &rest body)
-  `(puthash ',name (lambda (context ,@params) ,@body) (antlr-lexer-rules current-lexer)))
+  `(puthash ',name (lambda (context ,@params) ,@body) 
+            (if (boundp 'current-lexer) 
+                (antlr-lexer-rules current-lexer) 
+                (antlr-parser-rules current-parser))))
 
 (defmacro lexer-match-range (a b)
   (let ((la (lexer-input-LA 1)))
@@ -287,6 +301,38 @@
                     (funcall method (antlr-lexer-context-token context))))
               (message "TODO handling error here"))))))))
 
+
+
+(defstruct antlr-parser
+  "An Antlr parser"
+  name
+  (token-names nil)
+  (tokens (make-hash-table))
+  (rules (make-hash-table))
+  (bitsets (make-hash-table))
+)
+
+(defmacro with-parser (name &rest body)
+  `(progn 
+     (let ((current-parser (gethash ',name *antlr-runtime-parsers*)))
+       ,@body)))
+
+(defun parser-token-names (&rest names)
+  (setf (antlr-parser-token-names current-parser) names))
+
+(defmacro parser-initialization (&rest body))
+
+(defmacro parser-bitset (name bitsets)
+  `(puthash ',name 
+            (create-bitset ',bitsets)
+            (antlr-parser-bitsets current-parser)))
+
+(defstruct bitset
+  "An Antlr bitset"
+  bits)
+
+(defun create-bitset (bitsets)
+  (make-bitset :bits bitsets))
 
 (provide 'antlr-runtime)
 ;;; antlr-runtime.el ends here
