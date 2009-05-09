@@ -43,7 +43,8 @@
   `(let ((failures ()))
      ,@(mapcar #'(lambda (te) `(condition-case failure
                                    ,te
-                                 (error (setq failures (cons failure failures))))) 
+;                                 (error (setq failures (cons failure failures)))
+                                 )) 
                body)
      (if (not (null failures))
          (signal 'tests-failed (reverse failures)))))

@@ -26,7 +26,7 @@
 
 ;;; Code:
 
-
+(setq debug-on-error t)
 (setq load-path (cons (expand-file-name "build/test/grammars") load-path))
 (setq load-path (cons (expand-file-name "src/runtime/ELisp") load-path))
 (setq load-path (cons (expand-file-name "test") load-path))
@@ -41,6 +41,9 @@
                              (when (= (common-token-channel token) 0)
                                (setq all-tokens (cons (cons (lexer-token-type token) (lexer-token-text token)) all-tokens)))))
     (reverse all-tokens)))
+
+(defun do-parse (lexerName parserName start-rule str)
+  (parse-string lexerName parserName start-rule str))
 
 (load "simple_lexer_test.el")
 (load "calc_lexer_test.el")

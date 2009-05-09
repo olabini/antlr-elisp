@@ -492,7 +492,11 @@ charRef(char,label) ::= <<
 /** match a character range */
 charRangeRef(a,b,label) ::= <<
 <if(label)>
+<if(LEXER)>
 (setq <label> (lexer-input-LA 1))<\n>
+<else>
+(setq <label> (parser-input-LA 1))<\n>
+<endif>
 <endif>
 (lexer-match-range <a> <b>) <checkRuleBacktrackFailure()>
 >>
@@ -503,7 +507,7 @@ matchSet(s,label,elementIndex,postmatchCode="") ::= <<
 <if(LEXER)>
 (setq <label> (lexer-input-LA 1))<\n>
 <else>
-<label>=(<labelType>)input.LT(1);<\n>
+(setq <label> (parser-input-LT 1))<\n>
 <endif>
 <endif>
 (if <s>
@@ -570,7 +574,7 @@ ruleRef(rule,label,elementIndex,args) ::= <<
 <else>
 (parser-call-rule <rule> <args; separator=" ">)<\n>
 <endif>
-(decf _fsp)
+(decf (antlr-parser-context-fsp context))
 <checkRuleBacktrackFailure()>
 >>
 
@@ -613,7 +617,7 @@ tree(root, actionsAfterRoot, children, nullableChildList) ::= <<
 <root:element()>
 <actionsAfterRoot:element()>
 <if(nullableChildList)>
-(when (equal (lexer-input-LA 1) *antlr-token-down*)
+(when (equal (parser-input-LA 1) *antlr-token-down*)
     match(input, Token.DOWN, null); <checkRuleBacktrackFailure()>
     <children:element()>
     match(input, Token.UP, null); <checkRuleBacktrackFailure()>)
@@ -636,7 +640,7 @@ validateSemanticPredicate(pred,description) ::= <<
 // F i x e d  D F A  (if-then-else)
 
 dfaState(k,edges,eotPredictsAlt,description,stateNumber,semPredState) ::= <<
-(let ((LA<decisionNumber>_<stateNumber> (lexer-input-LA <k>)))<\n>
+(let ((LA<decisionNumber>_<stateNumber> (parser-input-LA <k>)))<\n>
 <edges; separator="\n   ">
 (progn
 <if(eotPredictsAlt)>
@@ -657,7 +661,11 @@ dfaState(k,edges,eotPredictsAlt,description,stateNumber,semPredState) ::= <<
  *  expect "if ( LA(1)==X ) match(X);" and that's it.
  */
 dfaOptionalBlockState(k,edges,eotPredictsAlt,description,stateNumber,semPredState) ::= <<
+<if(LEXER)>
 (setq LA<decisionNumber>_<stateNumber> (lexer-input-LA <k>))<\n>
+<else>
+(setq LA<decisionNumber>_<stateNumber> (parser-input-LA <k>))<\n>
+<endif>
 <edges; separator="\n  "><edges:{)}; separator="">
 >>
 
@@ -668,7 +676,11 @@ dfaOptionalBlockState(k,edges,eotPredictsAlt,description,stateNumber,semPredStat
  *  anything other than 'a' predicts exiting.
  */
 dfaLoopbackState(k,edges,eotPredictsAlt,description,stateNumber,semPredState) ::= <<
+<if(LEXER)>
 (setq LA<decisionNumber>_<stateNumber> (lexer-input-LA <k>))<\n>
+<else>
+(setq LA<decisionNumber>_<stateNumber> (parser-input-LA <k>))<\n>
+<endif>
 <edges; separator="\n  ">
 <if(eotPredictsAlt)>
 <if(!edges)>
@@ -700,7 +712,11 @@ dfaEdge(labelExpr, targetState, predicates) ::= <<
  *  decides if this is possible: CodeGenerator.canGenerateSwitch().
  */
 dfaStateSwitch(k,edges,eotPredictsAlt,description,stateNumber,semPredState) ::= <<
+<if(LEXER)>
 (case (lexer-input-LA <k>)
+<else>
+(case (parser-input-LA <k>)
+<endif>
 <edges; separator="\n">
 (otherwise
 <if(eotPredictsAlt)>
@@ -716,13 +732,21 @@ dfaStateSwitch(k,edges,eotPredictsAlt,description,stateNumber,semPredState) ::= 
 >>
 
 dfaOptionalBlockStateSwitch(k,edges,eotPredictsAlt,description,stateNumber,semPredState) ::= <<
+<if(LEXER)>
 (case (lexer-input-LA <k>)
+<else>
+(case (parser-input-LA <k>)
+<endif>
     <edges; separator="\n">
 )<\n>
 >>
 
 dfaLoopbackStateSwitch(k, edges,eotPredictsAlt,description,stateNumber,semPredState) ::= <<
+<if(LEXER)>
 (case (lexer-input-LA <k>)
+<else>
+(case (parser-input-LA <k>)
+<endif>
 <edges; separator="\n"><\n>
 <if(eotPredictsAlt)>
 (otherwise
@@ -801,7 +825,11 @@ cyclicDFA(dfa) ::= <<
  *  state.
  */
 cyclicDFAState(decisionNumber,stateNumber,edges,needErrorClause,semPredState) ::= <<
+<if(LEXER)>
 (let ((LA<decisionNumber>_<stateNumber> (lexer-input-LA 1)))<\n>
+<else>
+(let ((LA<decisionNumber>_<stateNumber> (parser-input-LA 1)))<\n>
+<endif>
 <if(semPredState)> <! get next lookahead symbol to test edges, then rewind !>
 int index<decisionNumber>_<stateNumber> = input.index();
 input.rewind();<\n>

@@ -129,7 +129,7 @@
   (signal 'no-viable-alt (list s)))
 
 (defmacro predictDFA (name)
-  `(predict-DFA-with (gethash ',name (antlr-lexer-dfas current-lexer))))
+  `(predict-DFA-with (gethash ',name (antlr-lexer-dfas (antlr-lexer-context-lexer context)))))
 
 (defmacro setDFA (name value)
   `(puthash ',name ,value (antlr-lexer-dfas current-lexer)))
@@ -176,6 +176,8 @@
   "Context used for a lexing"
   (lexer nil)
   (input nil)
+  (input-start -1)
+  (input-end -1)
   (token nil)
   (token-start-char-index -1)
   (token-start-line -1)
@@ -214,10 +216,22 @@
                 (antlr-parser-tokens current-parser))))
 
 (defmacro defrule (name params &rest body)
-  `(puthash ',name (lambda (context ,@params) ,@body) 
-            (if (boundp 'current-lexer) 
-                (antlr-lexer-rules current-lexer) 
-                (antlr-parser-rules current-parser))))
+  (let ((tokens (if (boundp 'current-lexer)
+                    (antlr-lexer-tokens current-lexer)
+                    (antlr-parser-tokens current-parser)))
+        (current-buffer (if (boundp 'current-lexer)
+                            '(antlr-lexer-context-input context)
+                            '(antlr-lexer-context-input (antlr-parser-context-input context))))
+        (result '()))
+    (maphash (lambda (key value)
+               (setq result (cons (list key value) result))) tokens)
+    `(puthash ',name (lambda (context ,@params) 
+                       (with-current-buffer ,current-buffer
+                         (let (,@result)
+                           ,@body)))
+              (if (boundp 'current-lexer) 
+                  (antlr-lexer-rules current-lexer) 
+                  (antlr-parser-rules current-parser)))))
 
 (defmacro lexer-match-range (a b)
   (let ((la (lexer-input-LA 1)))
@@ -274,13 +288,28 @@
     (lex-emit token)
     token))
 
-(defun lex-buffer (lexer-name method buffer start end)
+(defun lexer-for-buffer (lexer-name buffer start end)
   (let* ((current-lexer (gethash lexer-name *antlr-runtime-lexers*))
          (context (make-antlr-lexer-context 
-                   :lexer current-lexer)))
+                   :lexer current-lexer
+                   :input buffer
+                   :input-start start
+                   :input-end end)))
     (save-excursion
-      (with-current-buffer buffer
-        (goto-char start)
+      (with-current-buffer (antlr-lexer-context-input context)
+        (goto-char (antlr-lexer-context-input-start context))
+            (setf (antlr-lexer-context-token context) nil
+                  (antlr-lexer-context-channel context) *antlr-token-default-channel*
+                  (antlr-lexer-context-token-start-char-index context) (point)
+                  (antlr-lexer-context-token-start-char-position-in-line context) (current-column)
+                  (antlr-lexer-context-token-start-line context) (line-number-at-pos)
+                  (antlr-lexer-context-text context) nil)))
+    context))
+
+(defun lex-buffer (lexer-name method buffer start end)
+  (let ((context (lexer-for-buffer lexer-name buffer start end)))
+    (save-excursion
+      (with-current-buffer (antlr-lexer-context-input context)
         (catch 'at-end
           (while t
             (setf (antlr-lexer-context-token context) nil
@@ -300,8 +329,6 @@
                   (unless (eq (antlr-lexer-context-token context) *antlr-token-skip-token*)
                     (funcall method (antlr-lexer-context-token context))))
               (message "TODO handling error here"))))))))
-
-
 
 (defstruct antlr-parser
   "An Antlr parser"
@@ -333,6 +360,48 @@
 
 (defun create-bitset (bitsets)
   (make-bitset :bits bitsets))
+
+(defstruct antlr-parser-context
+  "An instance of a running parser"
+  input
+  parser
+  (fsp -1)
+  (following (make-vector 100 nil))
+  )
+
+(defun buffer-from-string (str)
+  (let ((buffer (generate-new-buffer (generate-new-buffer-name "*antlr string lexing*"))))
+    (save-excursion
+      (with-current-buffer buffer
+        (insert str)
+        (goto-char (point-min))
+        (set-buffer-modified-p nil)))
+    buffer))
+
+(defun parse-string (lname pname start-rule str) 
+  (let* ((buffer  (buffer-from-string str))
+         (context (make-antlr-parser-context 
+                   :input (lexer-for-buffer lname buffer 0 (buffer-size buffer))
+                   :parser (gethash pname *antlr-runtime-parsers*))))
+    (funcall (gethash start-rule (antlr-parser-rules (antlr-parser-context-parser context))) context)))
+
+(defmacro parser-push-follow (rule-name)
+  `(progn 
+     (if (>= (+ (antlr-parser-context-fsp context) 1)
+             (length (antlr-parser-context-following context)))
+         (let ((f (vconcat (antlr-parser-context-following context) (make-vector (length (antlr-parser-context-following context)) nil))))
+           (setf (antlr-parser-context-following context) f)))
+     (incf (antlr-parser-context-fsp context))
+     (aset (antlr-parser-context-following context) (antlr-parser-context-fsp context) (gethash ',rule-name (antlr-parser-bitsets (antlr-parser-context-parser context))))))
+
+(defmacro parser-call-rule (name)
+  `(progn 
+     ;(message (concat "calling rule " (format "%s" ',name))) 
+     (funcall (gethash ',name (antlr-parser-rules (antlr-parser-context-parser context))) context)))
+
+(defun report-error (re)
+  (signal (car re) (cdr re))
+)
 
 (provide 'antlr-runtime)
 ;;; antlr-runtime.el ends here
